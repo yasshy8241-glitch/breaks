@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>店舗スタッフ休憩回し管理アプリ</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts Inter & Noto Sans JP -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    body {
+      font-family: 'Inter', 'Noto Sans JP', sans-serif;
+      touch-action: manipulation;
+    }
+
+    /* Custom scrollbars */
+    .timeline-scroll::-webkit-scrollbar {
+      height: 8px;
+    }
+    .timeline-scroll::-webkit-scrollbar-track {
+      background: #f1f5f9;
+      border-radius: 4px;
+    }
+    .timeline-scroll::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+    .timeline-scroll::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+
+    /* Out-of-shift stripe pattern for crystal clear contrast */
+    .out-of-shift-bg {
+      background: repeating-linear-gradient(
+        -45deg,
+        rgba(241, 245, 249, 0.95),
+        rgba(241, 245, 249, 0.95) 8px,
+        rgba(226, 232, 240, 0.65) 8px,
+        rgba(226, 232, 240, 0.65) 16px
+      );
+    }
+
+    /* Resize handles for drag adjustment */
+    .resize-handle {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: opacity 0.15s ease, background-color 0.15s ease;
+      cursor: col-resize;
+      z-index: 25;
+      touch-action: none;
+    }
+    .group:hover .resize-handle,
+    .resizable-item:hover .resize-handle,
+    .is-resizing .resize-handle {
+      opacity: 1;
+    }
+    .resize-handle-left {
+      left: 0;
+      border-top-left-radius: inherit;
+      border-bottom-left-radius: inherit;
+    }
+    .resize-handle-right {
+      right: 0;
+      border-top-right-radius: inherit;
+      border-bottom-right-radius: inherit;
+    }
+    .resize-handle:hover,
+    .resize-handle.active {
+      background-color: rgba(255, 255, 255, 0.35);
+    }
+    .shift-handle:hover,
+    .shift-handle.active {
+      background-color: rgba(99, 102, 241, 0.2);
+    }
+
+    .handle-bar {
+      width: 3px;
+      height: 16px;
+      background-color: currentColor;
+      border-radius: 9999px;
+      pointer-events: none;
+    }
+
+    @keyframes commitSuccess {
+      0% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.7); transform: scale(0.98); }
+      50% { box-shadow: 0 0 0 8px rgba(99, 102, 241, 0); transform: scale(1.02); }
+      100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); transform: scale(1); }
+    }
+    .animate-commit {
+      animation: commitSuccess 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    
+    .ghost-preview {
+      border: 2px dashed rgba(99, 102, 241, 0.6) !important;
+      background: rgba(238, 242, 255, 0.45) !important;
+      pointer-events: none;
+    }
+  </style>
+</head>
+
+<body class="bg-slate-100 text-slate-800 antialiased min-h-screen flex flex-col">
+
+  <!-- Top Navigation Header -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-2xs">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center space-x-3">
+        <div class="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-md shadow-indigo-200">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        </div>
+        <div>
+          <h1 class="font-bold text-base sm:text-lg text-slate-900 leading-tight">店舗スタッフ 休憩回し管理</h1>
+          <p class="text-xs text-slate-500 font-medium">直感タイムライン・ドラッグ伸縮対応</p>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="flex items-center space-x-2">
+        <button onclick="openStaffRosterModal()" class="inline-flex items-center px-3 py-2 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 transition shadow-2xs">
+          <svg class="w-4 h-4 mr-1.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+          スタッフ名簿
+        </button>
+        <button onclick="openShiftEditModal()" class="inline-flex items-center px-3 py-2 border border-slate-300 rounded-lg text-xs font-semibold text-indigo-700 bg-indigo-50/80 hover:bg-indigo-100/70 border-indigo-200 transition shadow-2xs">
+          <svg class="w-4 h-4 mr-1.5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          シフト変更
+        </button>
+        <button onclick="openBreakModal()" class="inline-flex items-center px-3.5 py-2 rounded-lg text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 transition shadow-sm shadow-indigo-200">
+          <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
+          休憩を追加
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto w-full px-4 sm:px-6 py-3.5 flex-1 flex flex-col space-y-3.5">
+    
+    <!-- Control Toolbar Panel (Idea 2: Jump, Filter, and Zoom Controls) -->
+    <div class="bg-white rounded-xl border border-slate-200/90 shadow-2xs px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+      
+      <!-- Left Group: Quick Jump & Filter Toggles -->
+      <div class="flex flex-wrap items-center gap-2.5">
+        <!-- Jump to Current Time Button -->
+        <button onclick="scrollToCurrentTime()" class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 active:scale-95 transition shadow-sm shadow-rose-200">
+          <span class="w-2 h-2 rounded-full bg-white mr-1.5 animate-pulse"></span>
+          現在時刻へジャンプ
+        </button>
+
+        <div class="h-4 w-px bg-slate-200 hidden sm:block"></div>
+
+        <!-- Filter: Only currently working staff -->
+        <button id="filter-btn-working" onclick="toggleWorkingNowFilter()" class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 transition">
+          <span class="w-2 h-2 rounded-full bg-slate-400 mr-1.5 filter-indicator"></span>
+          今出勤中のみ表示
+        </button>
+
+        <!-- Filter: Only active break staff -->
+        <button id="filter-btn-break" onclick="toggleOnBreakFilter()" class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 transition">
+          <span class="w-2 h-2 rounded-full bg-slate-400 mr-1.5 filter-indicator"></span>
+          現在休憩中のみ
+        </button>
+
+        <!-- Staff Select Filter Dropdown -->
+        <div class="relative">
+          <select id="filter-staff-select" onchange="handleStaffFilterChange(this.value)" class="text-xs rounded-lg border border-slate-200 pl-2.5 pr-7 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-50/90 text-slate-700 font-medium cursor-pointer shadow-2xs hover:bg-slate-100 transition">
+            <option value="all">全員表示 (全スタッフ)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Right Group: Zoom Scale Controls & View Info -->
+      <div class="flex items-center space-x-2 shrink-0">
+        <span class="text-xs text-slate-400 font-medium hidden md:inline">表示倍率:</span>
+        <div class="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-xs font-medium">
+          <button onclick="setTimelineZoom(60)" id="zoom-btn-60" class="px-2.5 py-1 rounded-md text-slate-600 hover:text-slate-900 transition">
+            俯瞰 (60px)
+          </button>
+          <button onclick="setTimelineZoom(80)" id="zoom-btn-80" class="px-2.5 py-1 rounded-md bg-white shadow-2xs text-indigo-600 font-bold transition">
+            標準 (80px)
+          </button>
+          <button onclick="setTimelineZoom(120)" id="zoom-btn-120" class="px-2.5 py-1 rounded-md text-slate-600 hover:text-slate-900 transition">
+            拡大 (120px)
+          </button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Timeline Container Card -->
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col flex-1">
+      <!-- Toolbar: Legend and Reset actions -->
+      <div class="px-4 py-2.5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 bg-slate-50/70">
+        <div class="flex items-center space-x-3 text-xs flex-wrap gap-y-1">
+          <span class="font-bold text-slate-700">凡例:</span>
+          <span class="inline-flex items-center">
+            <span class="w-3 h-3 rounded bg-indigo-600 mr-1.5 shadow-2xs"></span>予定
+          </span>
+          <span class="inline-flex items-center">
+            <span class="w-3 h-3 rounded bg-amber-500 mr-1.5 shadow-2xs"></span>休憩中
+          </span>
+          <span class="inline-flex items-center">
+            <span class="w-3 h-3 rounded bg-emerald-600 mr-1.5 shadow-2xs"></span>消化済み
+          </span>
+          <span class="inline-flex items-center font-medium text-indigo-900">
+            <span class="w-4 h-2.5 rounded-sm bg-white border-2 border-indigo-300 mr-1.5 shadow-2xs"></span>勤務中エリア
+          </span>
+          <span class="inline-flex items-center text-slate-500">
+            <span class="w-4 h-2.5 rounded-sm out-of-shift-bg border border-slate-300 mr-1.5"></span>シフト時間外
+          </span>
+          <span class="inline-flex items-center ml-2 pl-2 border-l border-slate-300 text-slate-500 hidden sm:inline-flex">
+            <span class="mr-1">↔️</span>左右端ドラッグで伸縮
+          </span>
+        </div>
+
+        <div class="flex items-center space-x-2">
+          <span id="active-filter-stats" class="text-xs text-slate-400 font-medium">全5名表示中</span>
+          <button onclick="restoreDemoData()" class="text-xs text-indigo-600 hover:text-indigo-800 font-medium px-2 py-0.5 rounded hover:bg-indigo-50 transition" title="初期サンプルデータに戻す">
+            🔄 サンプルデータ復元
+          </button>
+        </div>
+      </div>
+
+      <!-- Timeline Gantt Scroll Area -->
+      <div id="timeline-scroll-wrapper" class="overflow-x-auto timeline-scroll relative flex-1 min-h-[420px]">
+        <div id="timeline-inner" class="relative select-none">
+          
+          <!-- Timeline Header (Time Scale) -->
+          <div class="flex items-stretch border-b border-slate-200 bg-slate-50 sticky top-0 z-20 shadow-2xs">
+            <div class="w-48 shrink-0 px-3 py-2.5 border-r border-slate-200 font-bold text-xs text-slate-700 bg-slate-50 z-20 flex items-center justify-between">
+              <span>スタッフ / 勤務時間</span>
+              <span class="text-[10px] text-slate-400 font-normal">時間クリックで変更</span>
+            </div>
+            <!-- Dynamic hours header: 09:00 to 22:00 -->
+            <div id="timeline-hours-header" class="flex-1 flex">
+              <!-- Dynamically generated hour blocks -->
+            </div>
+          </div>
+
+          <!-- Staff rows list -->
+          <div id="staff-rows-container" class="divide-y divide-slate-100 relative">
+            <!-- Dynamically populated rows -->
+          </div>
+
+          <!-- Drag Realtime Floating Tooltip -->
+          <div id="drag-tooltip" class="absolute z-40 pointer-events-none transform -translate-x-1/2 -translate-y-full mb-2 bg-slate-900 text-white text-xs px-2.5 py-1.5 rounded-lg shadow-xl font-mono whitespace-nowrap opacity-0 transition-opacity duration-100 hidden">
+            <div id="drag-tooltip-text" class="font-semibold text-center">12:00 - 13:00</div>
+            <div id="drag-tooltip-sub" class="text-[10px] text-indigo-300 text-center">60分 (+15分)</div>
+            <div class="absolute left-1/2 -bottom-1 -translate-x-1/2 w-2 h-2 bg-slate-900 rotate-45"></div>
+          </div>
+
+          <!-- Current Time Indicator Line (Vertical Bar) -->
+          <div id="current-time-line" class="absolute top-0 bottom-0 pointer-events-none z-10 hidden" style="left: 0px;">
+            <div class="w-[2px] h-full bg-rose-500 shadow-sm relative">
+              <div class="absolute -top-1 -left-[5px] w-3 h-3 rounded-full bg-rose-600 shadow-md"></div>
+              <div id="current-time-label" class="absolute -top-6 -left-6 bg-rose-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow whitespace-nowrap font-mono">
+                --:--
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Break Modal (Add / Edit) -->
+  <div id="break-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs hidden p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden border border-slate-100 animate-in fade-in zoom-in duration-150">
+      <div class="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+        <h3 id="break-modal-title" class="text-base font-bold text-slate-800">休憩の登録</h3>
+        <button onclick="closeBreakModal()" class="text-slate-400 hover:text-slate-600 rounded-lg p-1.5 hover:bg-slate-200 transition">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <form id="break-form" onsubmit="handleBreakFormSubmit(event)" class="p-6 space-y-4">
+        <input type="hidden" id="break-id">
+
+        <!-- Staff Select -->
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">担当スタッフ <span class="text-rose-500">*</span></label>
+          <select id="break-staff" required class="w-full text-sm rounded-lg border border-slate-300 px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white">
+            <!-- Dynamic staff options -->
+          </select>
+        </div>
+
+        <!-- Quick Duration Presets -->
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1.5">ワンタップ長さ選択</label>
+          <div class="grid grid-cols-4 gap-2 mb-2">
+            <button type="button" onclick="setBreakDurationPreset(15)" class="text-xs font-semibold py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-300 border border-slate-200 rounded-lg transition text-slate-700">15分</button>
+            <button type="button" onclick="setBreakDurationPreset(30)" class="text-xs font-semibold py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-300 border border-slate-200 rounded-lg transition text-slate-700">30分</button>
+            <button type="button" onclick="setBreakDurationPreset(45)" class="text-xs font-semibold py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-300 border border-slate-200 rounded-lg transition text-slate-700">45分</button>
+            <button type="button" onclick="setBreakDurationPreset(60)" class="text-xs font-semibold py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-300 border border-slate-200 rounded-lg transition text-slate-700">60分</button>
+          </div>
+          <div class="grid grid-cols-3 gap-2">
+            <button type="button" onclick="setBreakDurationPreset(120)" class="text-xs font-semibold py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-300 border border-slate-200 rounded-lg transition text-slate-700">2時間 (120分)</button>
+            <button type="button" onclick="setBreakDurationPreset(135)" class="text-xs font-semibold py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-300 border border-slate-200 rounded-lg transition text-slate-700">2h15m (135分)</button>
+            <button type="button" onclick="setBreakDurationPreset(195)" class="text-xs font-semibold py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-300 border border-slate-200 rounded-lg transition text-slate-700">3h15m (195分)</button>
+          </div>
+        </div>
+
+        <!-- Start & End Time Input -->
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">開始時間 <span class="text-rose-500">*</span></label>
+            <input type="time" id="break-start" required onchange="calculateDurationDisplay()" class="w-full text-sm rounded-lg border border-slate-300 px-3 py-2 font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">終了時間 <span class="text-rose-500">*</span></label>
+            <input type="time" id="break-end" required onchange="calculateDurationDisplay()" class="w-full text-sm rounded-lg border border-slate-300 px-3 py-2 font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+          </div>
+        </div>
+        <div class="text-right text-xs font-medium text-slate-500" id="duration-indicator">
+          休憩時間: <span class="font-bold text-indigo-600">45分</span>
+        </div>
+
+        <!-- Status -->
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">ステータス</label>
+          <div class="grid grid-cols-3 gap-2">
+            <label class="flex items-center justify-center p-2 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 has-checked:border-indigo-600 has-checked:bg-indigo-50/50 has-checked:text-indigo-700 text-xs font-medium">
+              <input type="radio" name="break-status" value="planned" checked class="hidden">
+              <span class="w-2 h-2 rounded-full bg-indigo-600 mr-1.5"></span>予定
+            </label>
+            <label class="flex items-center justify-center p-2 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 has-checked:border-amber-600 has-checked:bg-amber-50/50 has-checked:text-amber-700 text-xs font-medium">
+              <input type="radio" name="break-status" value="active" class="hidden">
+              <span class="w-2 h-2 rounded-full bg-amber-500 mr-1.5 animate-pulse"></span>休憩中
+            </label>
+            <label class="flex items-center justify-center p-2 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 has-checked:border-emerald-600 has-checked:bg-emerald-50/50 has-checked:text-emerald-700 text-xs font-medium">
+              <input type="radio" name="break-status" value="completed" class="hidden">
+              <span class="w-2 h-2 rounded-full bg-emerald-600 mr-1.5"></span>消化済み
+            </label>
+          </div>
+        </div>
+
+        <!-- Note Memo -->
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">備考・引き継ぎメモ (任意)</label>
+          <input type="text" id="break-note" placeholder="例: レジ交代済み、外出など" class="w-full text-sm rounded-lg border border-slate-300 px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+        </div>
+
+        <!-- Dialog Buttons -->
+        <div class="pt-3 border-t border-slate-200 flex items-center justify-between">
+          <button type="button" id="btn-delete-break" onclick="deleteCurrentBreak()" class="text-xs text-rose-600 hover:text-rose-800 font-semibold px
