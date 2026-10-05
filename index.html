@@ -519,9 +519,9 @@
     const TOTAL_HOURS = END_HOUR - START_HOUR; // 13 hours
     let currentHourWidth = 80; // Default 80px per 1 hour
 
-    // Storage Keys: v6にアップデート (過去の不正データによるエラー・画面真っ白を防止)
-    const STORAGE_KEY_STAFF = 'store_break_staff_list_v6';
-    const STORAGE_KEY_BREAKS = 'store_break_schedule_list_v6';
+    // Storage Keys: v7にアップデート (過去の不正データによるエラー・画面真っ白を確実に防止)
+    const STORAGE_KEY_STAFF = 'store_break_staff_list_v7';
+    const STORAGE_KEY_BREAKS = 'store_break_schedule_list_v7';
 
     // Application state
     let staffList = [];
@@ -560,15 +560,25 @@
         const storedBreaks = localStorage.getItem(STORAGE_KEY_BREAKS);
 
         if (storedStaff && storedBreaks) {
-          staffList = JSON.parse(storedStaff);
-          breakList = JSON.parse(storedBreaks);
+          const parsedStaff = JSON.parse(storedStaff);
+          const parsedBreaks = JSON.parse(storedBreaks);
+          
+          // データ構造が正しいか簡易チェック。不正な場合は初期化
+          if (Array.isArray(parsedStaff) && Array.isArray(parsedBreaks)) {
+             staffList = parsedStaff;
+             breakList = parsedBreaks;
+          } else {
+             throw new Error("Invalid data format in localStorage");
+          }
         } else {
+          // 初期データのセットアップ
           staffList = JSON.parse(JSON.stringify(defaultStaff));
           breakList = JSON.parse(JSON.stringify(defaultBreaks));
           saveData();
         }
       } catch (err) {
-        console.error('Storage parse error, resetting:', err);
+        console.error('Storage parse error, resetting data:', err);
+        // エラー時は確実に初期状態に戻して画面真っ白を防ぐ
         staffList = JSON.parse(JSON.stringify(defaultStaff));
         breakList = JSON.parse(JSON.stringify(defaultBreaks));
         saveData();
