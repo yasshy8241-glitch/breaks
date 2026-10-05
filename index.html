@@ -658,4 +658,1060 @@
         btn.classList.remove('bg-indigo-50', 'border-indigo-400', 'text-indigo-700', 'font-bold');
         if (indicator) {
           indicator.classList.remove('bg-indigo-600');
-          indicator.classList.add('
+          indicator.classList.add('bg-slate-400');
+        }
+      }
+      renderTimelineRows();
+    }
+
+    function toggleOnBreakFilter() {
+      filterOnBreak = !filterOnBreak;
+      const btn = document.getElementById('filter-btn-break');
+      if (!btn) return;
+      const indicator = btn.querySelector('.filter-indicator');
+
+      if (filterOnBreak) {
+        btn.classList.add('bg-amber-50', 'border-amber-400', 'text-amber-700', 'font-bold');
+        if (indicator) {
+          indicator.classList.remove('bg-slate-400');
+          indicator.classList.add('bg-amber-500');
+        }
+      } else {
+        btn.classList.remove('bg-amber-50', 'border-amber-400', 'text-amber-700', 'font-bold');
+        if (indicator) {
+          indicator.classList.remove('bg-amber-500');
+          indicator.classList.add('bg-slate-400');
+        }
+      }
+      renderTimelineRows();
+    }
+
+    function handleStaffFilterChange(val) {
+      selectedStaffFilter = val;
+      renderTimelineRows();
+    }
+
+    function updateStaffSelectFilterOptions() {
+      const select = document.getElementById('filter-staff-select');
+      if (!select) return;
+      const currentVal = selectedStaffFilter;
+
+      select.innerHTML = '<option value="all">全員表示 (全スタッフ)</option>';
+      staffList.forEach(staff => {
+        const opt = document.createElement('option');
+        opt.value = staff.id;
+        opt.textContent = `👤 ${staff.name}`;
+        select.appendChild(opt);
+      });
+
+      if (staffList.some(s => s.id === currentVal)) {
+        select.value = currentVal;
+      } else {
+        selectedStaffFilter = 'all';
+        select.value = 'all';
+      }
+    }
+
+    function renderTimelineHeader() {
+      const header = document.getElementById('timeline-hours-header');
+      if (!header) return;
+      header.innerHTML = '';
+
+      for (let h = START_HOUR; h < END_HOUR; h++) {
+        const hourDiv = document.createElement('div');
+        hourDiv.style.width = `${currentHourWidth}px`;
+        hourDiv.className = 'shrink-0 text-center py-2 text-xs font-mono text-slate-500 font-semibold border-r border-slate-200';
+        hourDiv.textContent = `${String(h).padStart(2, '0')}:00`;
+        header.appendChild(hourDiv);
+      }
+    }
+
+    function isStaffWorkingNow(staff) {
+      if (staff.isOff) return false;
+      const now = new Date();
+      const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+      const [sh, sm] = staff.shiftStart.split(':').map(Number);
+      const [eh, em] = staff.shiftEnd.split(':').map(Number);
+      const shiftStartMinutes = sh * 60 + sm;
+      const shiftEndMinutes = eh * 60 + em;
+
+      return currentMinutes >= shiftStartMinutes && currentMinutes <= shiftEndMinutes;
+    }
+
+    function isStaffCurrentlyOnBreak(staffId) {
+      return breakList.some(b => b.staffId === staffId && b.status === 'active');
+    }
+
+    function renderTimelineRows() {
+      const container = document.getElementById('staff-rows-container');
+      if (!container) return;
+      container.innerHTML = '';
+
+      let filteredStaff = staffList.filter(staff => {
+        if (selectedStaffFilter !== 'all' && staff.id !== selectedStaffFilter) return false;
+        if (filterWorkingNow && !isStaffWorkingNow(staff)) return false;
+        if (filterOnBreak && !isStaffCurrentlyOnBreak(staff.id)) return false;
+        return true;
+      });
+
+      // 並び替え：勤務開始時間が早い順 (休みの人は一番下)
+      filteredStaff.sort((a, b) => {
+        if (a.isOff && !b.isOff) return 1;
+        if (!a.isOff && b.isOff) return -1;
+        if (a.isOff && b.isOff) return 0;
+
+        const aMins = timeToMinutesFromStart(a.shiftStart);
+        const bMins = timeToMinutesFromStart(b.shiftStart);
+        return aMins - bMins;
+      });
+
+      const statsBadge = document.getElementById('active-filter-stats');
+      if (statsBadge) {
+        if (filteredStaff.length === staffList.length) {
+          statsBadge.textContent = `全${staffList.length}名表示中`;
+        } else {
+          statsBadge.innerHTML = `<span class="text-indigo-600 font-bold">${filteredStaff.length}名</span> / 全${staffList.length}名`;
+        }
+      }
+
+      if (filteredStaff.length === 0) {
+        container.innerHTML = `
+          <div class="p-12 text-center text-slate-400 text-sm">
+            <p class="font-medium">該当するスタッフが見つかりません</p>
+            <p class="text-xs text-slate-400 mt-1">フィルターの解除や名簿への登録をお確かめください</p>
+          </div>
+        `;
+        return;
+      }
+
+      const pxPerMinute = (TOTAL_HOURS * currentHourWidth) / (TOTAL_HOURS * 60);
+
+      filteredStaff.forEach(staff => {
+        const row = document.createElement('div');
+        row.className = 'flex items-stretch hover:bg-slate-50/50 transition group';
+        row.id = `staff-row-${staff.id}`;
+
+        // Staff Info Left Column
+        const infoCol = document.createElement('div');
+        infoCol.className = 'w-48 shrink-0 px-3 py-2 border-r border-slate-200 flex items-center justify-between bg-white z-10 shadow-[1px_0_3px_rgba(0,0,0,0.02)]';
+        
+        let shiftBadgeClass = staff.isOff 
+          ? 'text-slate-500 bg-slate-100 border-slate-200 hover:bg-slate-200' 
+          : 'text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100';
+        let shiftIconClass = staff.isOff ? 'text-slate-400' : 'text-indigo-500';
+        let shiftText = staff.isOff ? '休み' : `${staff.shiftStart}〜${staff.shiftEnd}`;
+
+        infoCol.innerHTML = `
+          <div class="truncate flex-1 pr-1">
+            <div class="flex items-center space-x-2 cursor-pointer group/name hover:text-indigo-600 transition" onclick="openStaffRosterForEdit('${staff.id}')" title="クリックしてスタッフ名を編集">
+              <div class="w-7 h-7 rounded-lg flex items-center justify-center text-white text-xs font-bold shrink-0 shadow-sm opacity-${staff.isOff ? '60' : '100'}" style="background-color: ${staff.color || '#4f46e5'}">
+                ${staff.name.charAt(0)}
+              </div>
+              <p class="text-xs font-bold ${staff.isOff ? 'text-slate-500' : 'text-slate-800'} group-hover/name:text-indigo-600 truncate">${staff.name}</p>
+            </div>
+            <!-- Shift Time Badge (Click to modify shift) -->
+            <button type="button" onclick="openShiftEditModal('${staff.id}')" class="mt-1 flex items-center text-[11px] font-mono font-semibold ${shiftBadgeClass} border rounded px-2 py-0.5 transition shadow-sm" title="クリックしてシフトや休みを変更">
+              <svg class="w-3 h-3 mr-1 ${shiftIconClass}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              <span>${shiftText}</span>
+            </button>
+          </div>
+          <div class="flex flex-col items-center space-y-1">
+            ${!staff.isOff ? `
+              <button type="button" onclick="quickAddBreakForStaff('${staff.id}')" class="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-slate-400 hover:text-indigo-600 rounded hover:bg-slate-100" title="このスタッフの休憩を追加">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+              </button>
+            ` : ''}
+          </div>
+        `;
+        row.appendChild(infoCol);
+
+        // Timeline Schedule Track
+        const trackCol = document.createElement('div');
+        trackCol.className = 'flex-1 relative select-none h-[72px] overflow-hidden';
+        trackCol.style.backgroundSize = `${currentHourWidth}px 100%`;
+        trackCol.style.backgroundImage = 'linear-gradient(to right, rgba(203, 213, 225, 0.6) 1px, transparent 1px)';
+        trackCol.dataset.staffId = staff.id;
+
+        // 休み状態の場合は全体をグレーアウトして終了
+        if (staff.isOff) {
+          const offStripe = document.createElement('div');
+          offStripe.className = 'absolute top-0 bottom-0 left-0 right-0 out-of-shift-bg pointer-events-none opacity-90';
+          trackCol.appendChild(offStripe);
+          
+          const offLabel = document.createElement('div');
+          offLabel.className = 'absolute inset-0 flex items-center justify-center text-slate-400 font-bold text-sm pointer-events-none';
+          offLabel.textContent = '休 み';
+          trackCol.appendChild(offLabel);
+          
+          row.appendChild(trackCol);
+          container.appendChild(row);
+          return; // 次のスタッフへ
+        }
+
+        // Shift calculation
+        const shiftStartMins = timeToMinutesFromStart(staff.shiftStart);
+        const shiftEndMins = timeToMinutesFromStart(staff.shiftEnd);
+        const shiftLeftPx = Math.max(0, shiftStartMins * pxPerMinute);
+        const shiftRightPx = Math.min(TOTAL_HOURS * currentHourWidth, shiftEndMins * pxPerMinute);
+        const shiftWidthPx = Math.max(0, shiftRightPx - shiftLeftPx);
+
+        // 1. Shift Out-of-bounds Striped Overlays
+        if (shiftLeftPx > 0) {
+          const leftStripe = document.createElement('div');
+          leftStripe.className = 'absolute top-0 bottom-0 left-0 out-of-shift-bg pointer-events-none opacity-90 border-r border-slate-300';
+          leftStripe.style.width = `${shiftLeftPx}px`;
+          trackCol.appendChild(leftStripe);
+        }
+        if (shiftRightPx < TOTAL_HOURS * currentHourWidth) {
+          const rightStripe = document.createElement('div');
+          rightStripe.className = 'absolute top-0 bottom-0 out-of-shift-bg pointer-events-none opacity-90 border-l border-slate-300';
+          rightStripe.style.left = `${shiftRightPx}px`;
+          rightStripe.style.right = '0px';
+          trackCol.appendChild(rightStripe);
+        }
+
+        // 2. High-contrast Work Shift Container (Draggable)
+        const shiftContainer = document.createElement('div');
+        shiftContainer.className = 'absolute top-1 bottom-1 bg-white/70 border-2 border-indigo-200 rounded-xl shadow-sm transition-[border-color,box-shadow] hover:border-indigo-400 group/shift draggable-item';
+        shiftContainer.style.left = `${shiftLeftPx}px`;
+        shiftContainer.style.width = `${shiftWidthPx}px`;
+        shiftContainer.id = `shift-box-${staff.id}`;
+
+        const shiftHeader = document.createElement('div');
+        shiftHeader.className = 'absolute top-0 left-0 right-0 h-4 bg-indigo-50 border-b border-indigo-100 rounded-t-lg flex items-center justify-between px-2 text-[10px] font-bold text-indigo-700 transition pointer-events-none';
+        shiftHeader.innerHTML = `
+          <span class="truncate">勤務中: ${staff.shiftStart} 〜 ${staff.shiftEnd}</span>
+        `;
+        shiftContainer.appendChild(shiftHeader);
+
+        // Shift handles (Resize)
+        const shiftHandleLeft = createResizeHandle('left', 'shift', staff.id, 'text-indigo-400');
+        const shiftHandleRight = createResizeHandle('right', 'shift', staff.id, 'text-indigo-400');
+        shiftContainer.appendChild(shiftHandleLeft);
+        shiftContainer.appendChild(shiftHandleRight);
+
+        // Add Drag Move event to the container body
+        const bindMoveEvent = (e) => {
+          if (e.target.closest('.resize-handle')) return; // ignore resize handles
+          initiateDrag(e, 'move', null, 'shift', staff.id);
+        };
+        shiftContainer.addEventListener('mousedown', bindMoveEvent);
+        shiftContainer.addEventListener('touchstart', bindMoveEvent, { passive: false });
+
+        trackCol.appendChild(shiftContainer);
+
+        // Quick click to add break on empty space (ignore clicks on items themselves)
+        trackCol.addEventListener('click', (e) => {
+          if (e.target === trackCol) {
+            const rect = trackCol.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const minutesFromStart = Math.floor((clickX / (TOTAL_HOURS * currentHourWidth)) * (TOTAL_HOURS * 60));
+            const roundedMins = Math.round(minutesFromStart / 15) * 15;
+            const startTotal = START_HOUR * 60 + roundedMins;
+            const startTimeStr = minutesToTimeString(Math.max(START_HOUR * 60, Math.min(END_HOUR * 60 - 30, startTotal)));
+            openBreakModal(null, staff.id, startTimeStr, 45);
+          }
+        });
+
+        // 3. Render Break blocks (Draggable & Resizable)
+        const staffBreaks = breakList.filter(b => b.staffId === staff.id);
+
+        staffBreaks.forEach(item => {
+          const startMins = timeToMinutesFromStart(item.start);
+          const endMins = timeToMinutesFromStart(item.end);
+          const durationMins = Math.max(1, endMins - startMins);
+
+          const leftPx = startMins * pxPerMinute;
+          const widthPx = durationMins * pxPerMinute;
+          // 小さい幅でも文字が崩れないように対応
+          const isSmall = widthPx < 30;
+
+          let badgeBg = 'bg-indigo-600 hover:bg-indigo-700 text-white';
+          let borderStyle = 'border-indigo-700';
+
+          if (item.status === 'active') {
+            badgeBg = 'bg-amber-500 hover:bg-amber-600 text-white ring-2 ring-amber-300';
+            borderStyle = 'border-amber-600';
+          } else if (item.status === 'completed') {
+            badgeBg = 'bg-emerald-600 hover:bg-emerald-700 text-white opacity-90';
+            borderStyle = 'border-emerald-700';
+          }
+
+          let durationLabel = `${durationMins}分`;
+          if (durationMins >= 60) {
+            const h = Math.floor(durationMins / 60);
+            const m = durationMins % 60;
+            durationLabel = m > 0 ? `${h}h${m}m` : `${h}時間`;
+          }
+
+          const block = document.createElement('div');
+          block.id = `break-box-${item.id}`;
+          block.className = `absolute top-6 bottom-2 rounded-lg ${badgeBg} shadow-sm border ${borderStyle} flex items-center justify-between text-xs select-none transition-shadow z-20 resizable-item draggable-item`;
+          block.style.left = `${Math.max(0, leftPx)}px`;
+          block.style.width = `${Math.max(1, widthPx)}px`; // 最小幅制約を緩和し、代わりにハンドルを押しやすくした
+          block.title = `${item.start} - ${item.end} (${durationLabel}) ${item.note || ''}`;
+
+          block.innerHTML = `
+            <div class="truncate flex items-center space-x-1 pointer-events-none ${isSmall ? 'hidden' : 'pl-1.5 pr-1'} w-full overflow-hidden">
+              <span class="font-bold text-[11px] whitespace-nowrap">${item.start}</span>
+              ${durationMins >= 30 ? `<span class="text-[10px] opacity-90 hidden sm:inline whitespace-nowrap">(${durationLabel})</span>` : ''}
+            </div>
+            ${item.status === 'active' && !isSmall ? '<span class="w-2 h-2 rounded-full bg-white animate-ping ml-1 mr-1 shrink-0 pointer-events-none"></span>' : ''}
+          `;
+
+          // Add resize handles
+          const breakHandleLeft = createResizeHandle('left', 'break', item.id, 'text-white/90');
+          const breakHandleRight = createResizeHandle('right', 'break', item.id, 'text-white/90');
+          block.appendChild(breakHandleLeft);
+          block.appendChild(breakHandleRight);
+
+          // Click / Move Events
+          const bindBreakMoveEvent = (e) => {
+            if (e.target.closest('.resize-handle')) return;
+            initiateDrag(e, 'move', null, 'break', item.id);
+          };
+          block.addEventListener('mousedown', bindBreakMoveEvent);
+          block.addEventListener('touchstart', bindBreakMoveEvent, { passive: false });
+
+          block.addEventListener('click', (e) => {
+            if (block.dataset.dragged === 'true') {
+              block.dataset.dragged = 'false';
+              return;
+            }
+            e.stopPropagation();
+            openBreakModal(item.id);
+          });
+
+          trackCol.appendChild(block);
+        });
+
+        row.appendChild(trackCol);
+        container.appendChild(row);
+      });
+
+      updateCurrentTimeLine();
+    }
+
+    function createResizeHandle(side, type, targetId, colorClass) {
+      const handle = document.createElement('div');
+      handle.className = `resize-handle resize-handle-${side} ${type === 'shift' ? 'shift-handle' : ''} ${colorClass}`;
+      handle.dataset.side = side;
+      handle.dataset.type = type;
+      handle.dataset.targetId = targetId;
+
+      const bar = document.createElement('span');
+      bar.className = 'handle-bar';
+      handle.appendChild(bar);
+
+      const onStart = (e) => {
+        e.stopPropagation();
+        initiateDrag(e, 'resize', side, type, targetId);
+      };
+
+      handle.addEventListener('mousedown', onStart);
+      handle.addEventListener('touchstart', onStart, { passive: false });
+
+      return handle;
+    }
+
+    // Unified Drag handler for both Resize (edges) and Move (center drag)
+    function initiateDrag(startEvent, mode, side, type, targetId) {
+      const isTouch = startEvent.type === 'touchstart';
+      const startClientX = isTouch ? startEvent.touches[0].clientX : startEvent.clientX;
+
+      let element = null;
+      let initialStart = '';
+      let initialEnd = '';
+      let staffId = null;
+
+      if (type === 'break') {
+        const item = breakList.find(b => b.id === targetId);
+        if (!item) return;
+        element = document.getElementById(`break-box-${targetId}`);
+        initialStart = item.start;
+        initialEnd = item.end;
+        staffId = item.staffId;
+      } else if (type === 'shift') {
+        const staff = staffList.find(s => s.id === targetId);
+        if (!staff) return;
+        element = document.getElementById(`shift-box-${targetId}`);
+        initialStart = staff.shiftStart;
+        initialEnd = staff.shiftEnd;
+        staffId = staff.id;
+      }
+
+      if (!element) return;
+      if (!isTouch) startEvent.preventDefault();
+
+      const pxPerMinute = (TOTAL_HOURS * currentHourWidth) / (TOTAL_HOURS * 60);
+      const originalStartMins = timeToMinutesFromStart(initialStart);
+      const originalEndMins = timeToMinutesFromStart(initialEnd);
+      const originalDurationMins = originalEndMins - originalStartMins;
+
+      const ghost = document.createElement('div');
+      ghost.className = 'absolute rounded-lg ghost-preview z-15';
+      ghost.style.left = element.style.left;
+      ghost.style.width = element.style.width;
+      ghost.style.top = element.style.top;
+      ghost.style.height = `${element.offsetHeight}px`;
+      if (element.parentElement) {
+        element.parentElement.appendChild(ghost);
+      }
+
+      const tooltip = document.getElementById('drag-tooltip');
+      if (tooltip) {
+        tooltip.classList.remove('hidden');
+        tooltip.style.opacity = '1';
+      }
+
+      activeDrag = {
+        mode,
+        side,
+        type,
+        targetId,
+        staffId,
+        element,
+        ghost,
+        startClientX,
+        originalStartMins,
+        originalEndMins,
+        originalDurationMins,
+        currentStartMins: originalStartMins,
+        currentEndMins: originalEndMins,
+        pxPerMinute,
+        hasMoved: false
+      };
+
+      document.body.classList.add('select-none');
+      if (mode === 'resize') {
+        document.body.classList.add('cursor-col-resize');
+        element.classList.add('is-resizing', 'ring-2', 'ring-indigo-400');
+      } else {
+        element.classList.add('is-moving', 'opacity-80', 'ring-2', 'ring-indigo-400');
+      }
+
+      updateDragTooltip();
+
+      const onMove = (e) => {
+        if (!activeDrag) return;
+        const currentClientX = e.type === 'touchmove' ? e.touches[0].clientX : e.clientX;
+        const deltaX = currentClientX - activeDrag.startClientX;
+
+        if (Math.abs(deltaX) > 3) {
+          activeDrag.hasMoved = true;
+          if (activeDrag.element) activeDrag.element.dataset.dragged = 'true';
+        }
+
+        const deltaMinutesRaw = deltaX / activeDrag.pxPerMinute;
+        const deltaMinutesSnapped = Math.round(deltaMinutesRaw / 15) * 15;
+
+        let newStartMins = activeDrag.originalStartMins;
+        let newEndMins = activeDrag.originalEndMins;
+
+        if (activeDrag.mode === 'resize') {
+          if (activeDrag.side === 'left') {
+            newStartMins = Math.min(newEndMins - 15, Math.max(0, activeDrag.originalStartMins + deltaMinutesSnapped));
+          } else {
+            newEndMins = Math.max(newStartMins + 15, Math.min(TOTAL_HOURS * 60, activeDrag.originalEndMins + deltaMinutesSnapped));
+          }
+        } else if (activeDrag.mode === 'move') {
+          newStartMins = activeDrag.originalStartMins + deltaMinutesSnapped;
+          newEndMins = newStartMins + activeDrag.originalDurationMins;
+          
+          // boundary clamps
+          if (newStartMins < 0) {
+            newStartMins = 0;
+            newEndMins = activeDrag.originalDurationMins;
+          } else if (newEndMins > TOTAL_HOURS * 60) {
+            newEndMins = TOTAL_HOURS * 60;
+            newStartMins = newEndMins - activeDrag.originalDurationMins;
+          }
+        }
+
+        activeDrag.currentStartMins = newStartMins;
+        activeDrag.currentEndMins = newEndMins;
+
+        const liveLeftPx = newStartMins * activeDrag.pxPerMinute;
+        const liveWidthPx = (newEndMins - newStartMins) * activeDrag.pxPerMinute;
+
+        activeDrag.element.style.left = `${liveLeftPx}px`;
+        activeDrag.element.style.width = `${Math.max(1, liveWidthPx)}px`;
+
+        updateDragTooltip();
+      };
+
+      const onEnd = () => {
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onEnd);
+        window.removeEventListener('touchmove', onMove);
+        window.removeEventListener('touchend', onEnd);
+
+        if (!activeDrag) return;
+
+        if (tooltip) {
+          tooltip.style.opacity = '0';
+          setTimeout(() => tooltip.classList.add('hidden'), 150);
+        }
+        if (activeDrag.ghost) activeDrag.ghost.remove();
+
+        document.body.classList.remove('select-none', 'cursor-col-resize');
+        activeDrag.element.classList.remove('is-resizing', 'is-moving', 'opacity-80', 'ring-2', 'ring-indigo-400');
+
+        if (activeDrag.hasMoved) {
+          const finalStartStr = minutesToTimeString(START_HOUR * 60 + activeDrag.currentStartMins);
+          const finalEndStr = minutesToTimeString(START_HOUR * 60 + activeDrag.currentEndMins);
+
+          if (activeDrag.type === 'break') {
+            const bIndex = breakList.findIndex(b => b.id === activeDrag.targetId);
+            if (bIndex !== -1) {
+              const newDuration = activeDrag.currentEndMins - activeDrag.currentStartMins;
+              breakList[bIndex].start = finalStartStr;
+              breakList[bIndex].end = finalEndStr;
+              saveData();
+              showToast(`休憩を ${finalStartStr}〜${finalEndStr} (${newDuration}分) に更新しました`);
+            }
+          } else if (activeDrag.type === 'shift') {
+            const sIndex = staffList.findIndex(s => s.id === activeDrag.targetId);
+            if (sIndex !== -1) {
+              staffList[sIndex].shiftStart = finalStartStr;
+              staffList[sIndex].shiftEnd = finalEndStr;
+              saveData();
+              showToast(`${staffList[sIndex].name}の時間を ${finalStartStr}〜${finalEndStr} に変更しました`);
+            }
+          }
+
+          renderTimelineRows();
+          const targetEl = document.getElementById(activeDrag.type === 'break' ? `break-box-${activeDrag.targetId}` : `shift-box-${activeDrag.targetId}`);
+          if (targetEl) {
+            targetEl.classList.add('animate-commit');
+          }
+        }
+
+        setTimeout(() => {
+          activeDrag = null;
+        }, 50);
+      };
+
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onEnd);
+      window.addEventListener('touchmove', onMove, { passive: false });
+      window.addEventListener('touchend', onEnd);
+    }
+
+    function updateDragTooltip() {
+      if (!activeDrag) return;
+      const tooltip = document.getElementById('drag-tooltip');
+      const tooltipText = document.getElementById('drag-tooltip-text');
+      const tooltipSub = document.getElementById('drag-tooltip-sub');
+      const inner = document.getElementById('timeline-inner');
+      if (!tooltip || !tooltipText || !tooltipSub || !inner) return;
+
+      const timelineBox = inner.getBoundingClientRect();
+      const newStart = minutesToTimeString(START_HOUR * 60 + activeDrag.currentStartMins);
+      const newEnd = minutesToTimeString(START_HOUR * 60 + activeDrag.currentEndMins);
+      const newDuration = activeDrag.currentEndMins - activeDrag.currentStartMins;
+      const oldDuration = activeDrag.originalEndMins - activeDrag.originalStartMins;
+      const diffMins = newDuration - oldDuration;
+
+      const diffLabel = activeDrag.mode === 'move' ? '移動' : (diffMins === 0 ? '' : diffMins > 0 ? ` (+${diffMins}分)` : ` (${diffMins}分)`);
+      const durationFmt = newDuration >= 60 ? `${Math.floor(newDuration / 60)}h${newDuration % 60 ? (newDuration % 60) + 'm' : ''}` : `${newDuration}分`;
+
+      const typeLabel = activeDrag.type === 'break' ? '休憩' : 'シフト';
+      tooltipText.textContent = `${typeLabel}: ${newStart} 〜 ${newEnd}`;
+      tooltipSub.textContent = activeDrag.mode === 'move' ? `合計: ${durationFmt} (移動中)` : `合計: ${durationFmt}${diffLabel}`;
+
+      const elRect = activeDrag.element.getBoundingClientRect();
+      const relativeX = (elRect.left + elRect.width / 2) - timelineBox.left;
+      const relativeY = elRect.top - timelineBox.top;
+
+      tooltip.style.left = `${relativeX}px`;
+      tooltip.style.top = `${relativeY - 6}px`;
+    }
+
+    window.openBreakModal = function(breakId = null, prefillStaffId = null, prefillStart = null, prefillDurationMins = 45) {
+      const modal = document.getElementById('break-modal');
+      const title = document.getElementById('break-modal-title');
+      const staffSelect = document.getElementById('break-staff');
+      const deleteBtn = document.getElementById('btn-delete-break');
+      if (!modal || !staffSelect) return;
+
+      // 出勤中（休みでない）スタッフのみを選択肢に出す
+      const activeStaff = staffList.filter(s => !s.isOff);
+      if (activeStaff.length === 0) {
+        showToast('現在出勤予定のスタッフがいません。シフト設定を確認してください。');
+        return;
+      }
+
+      staffSelect.innerHTML = activeStaff.map(s => `<option value="${s.id}">${s.name} (${s.shiftStart}〜${s.shiftEnd})</option>`).join('');
+
+      if (breakId) {
+        const item = breakList.find(b => b.id === breakId);
+        if (!item) return;
+
+        title.textContent = '休憩の編集';
+        document.getElementById('break-id').value = item.id;
+        
+        // If staff somehow became off but has an old break, append option anyway just to show it safely
+        if (!activeStaff.some(s => s.id === item.staffId)) {
+           const offStaff = staffList.find(s => s.id === item.staffId);
+           if (offStaff) staffSelect.innerHTML += `<option value="${offStaff.id}">${offStaff.name} (休み)</option>`;
+        }
+        staffSelect.value = item.staffId;
+
+        document.getElementById('break-start').value = item.start;
+        document.getElementById('break-end').value = item.end;
+        document.getElementById('break-note').value = item.note || '';
+
+        const radio = document.querySelector(`input[name="break-status"][value="${item.status}"]`);
+        if (radio) radio.checked = true;
+
+        if (deleteBtn) deleteBtn.classList.remove('hidden');
+      } else {
+        title.textContent = '新規休憩の登録';
+        document.getElementById('break-id').value = '';
+        if (prefillStaffId && activeStaff.some(s => s.id === prefillStaffId)) {
+          staffSelect.value = prefillStaffId;
+        }
+
+        let startVal = prefillStart;
+        if (!startVal) {
+          const now = new Date();
+          const currentHour = now.getHours();
+          const defaultH = currentHour < START_HOUR ? START_HOUR : Math.min(currentHour, END_HOUR - 1);
+          startVal = `${String(defaultH).padStart(2, '0')}:00`;
+        }
+        document.getElementById('break-start').value = startVal;
+
+        const [sh, sm] = startVal.split(':').map(Number);
+        const endTotal = sh * 60 + sm + prefillDurationMins;
+        document.getElementById('break-end').value = minutesToTimeString(Math.min(END_HOUR * 60, endTotal));
+
+        document.getElementById('break-note').value = '';
+        const defaultRadio = document.querySelector('input[name="break-status"][value="planned"]');
+        if (defaultRadio) defaultRadio.checked = true;
+
+        if (deleteBtn) deleteBtn.classList.add('hidden');
+      }
+
+      calculateDurationDisplay();
+      modal.classList.remove('hidden');
+    };
+
+    window.closeBreakModal = function() {
+      const modal = document.getElementById('break-modal');
+      if (modal) modal.classList.add('hidden');
+    };
+
+    window.setBreakDurationPreset = function(minutes) {
+      const startInput = document.getElementById('break-start');
+      const endInput = document.getElementById('break-end');
+
+      let startVal = startInput.value || '12:00';
+      const [sh, sm] = startVal.split(':').map(Number);
+      const endMins = sh * 60 + sm + minutes;
+
+      endInput.value = minutesToTimeString(Math.min(END_HOUR * 60, endMins));
+      calculateDurationDisplay();
+    };
+
+    window.calculateDurationDisplay = function() {
+      const sVal = document.getElementById('break-start').value;
+      const eVal = document.getElementById('break-end').value;
+      const ind = document.getElementById('duration-indicator');
+
+      if (!sVal || !eVal || !ind) return;
+      const [sh, sm] = sVal.split(':').map(Number);
+      const [eh, em] = eVal.split(':').map(Number);
+
+      const diff = (eh * 60 + em) - (sh * 60 + sm);
+      if (diff <= 0) {
+        ind.innerHTML = `<span class="text-rose-500 font-bold">終了時間は開始時間より後に設定してください</span>`;
+      } else {
+        const h = Math.floor(diff / 60);
+        const m = diff % 60;
+        const formatted = h > 0 ? (m > 0 ? `${h}時間${m}分` : `${h}時間`) : `${m}分`;
+        ind.innerHTML = `休憩時間: <span class="font-bold text-indigo-600">${formatted} (${diff}分)</span>`;
+      }
+    };
+
+    window.handleBreakFormSubmit = function(e) {
+      e.preventDefault();
+      const id = document.getElementById('break-id').value;
+      const staffId = document.getElementById('break-staff').value;
+      const start = document.getElementById('break-start').value;
+      const end = document.getElementById('break-end').value;
+      const note = document.getElementById('break-note').value.trim();
+      const statusInput = document.querySelector('input[name="break-status"]:checked');
+      const status = statusInput ? statusInput.value : 'planned';
+
+      const [sh, sm] = start.split(':').map(Number);
+      const [eh, em] = end.split(':').map(Number);
+      if ((eh * 60 + em) <= (sh * 60 + sm)) {
+        showToast('終了時間は開始時間より後の時刻を指定してください');
+        return;
+      }
+
+      if (id) {
+        const idx = breakList.findIndex(b => b.id === id);
+        if (idx !== -1) {
+          breakList[idx] = { ...breakList[idx], staffId, start, end, note, status };
+          showToast('休憩予定を更新しました');
+        }
+      } else {
+        const newBreak = {
+          id: 'br_' + Date.now(),
+          staffId,
+          start,
+          end,
+          note,
+          status
+        };
+        breakList.push(newBreak);
+        showToast('新しい休憩を登録しました');
+      }
+
+      saveData();
+      renderTimelineRows();
+      closeBreakModal();
+    };
+
+    window.deleteCurrentBreak = function() {
+      const id = document.getElementById('break-id').value;
+      if (!id) return;
+
+      openConfirmModal('休憩の削除', 'この休憩予定を削除してもよろしいですか？', () => {
+        breakList = breakList.filter(b => b.id !== id);
+        saveData();
+        renderTimelineRows();
+        closeBreakModal();
+        showToast('休憩を削除しました');
+      });
+    };
+
+    window.quickAddBreakForStaff = function(staffId) {
+      const now = new Date();
+      const currentH = now.getHours();
+      let startH = currentH < START_HOUR ? START_HOUR : Math.min(currentH, END_HOUR - 1);
+      const startStr = `${String(startH).padStart(2, '0')}:00`;
+      openBreakModal(null, staffId, startStr, 45);
+    };
+
+    // --- 1. スタッフ名簿管理 ---
+    window.openStaffRosterModal = function() {
+      renderStaffRosterList();
+      cancelStaffRosterEdit();
+      const modal = document.getElementById('staff-roster-modal');
+      if (modal) modal.classList.remove('hidden');
+    };
+
+    window.closeStaffRosterModal = function() {
+      const modal = document.getElementById('staff-roster-modal');
+      if (modal) modal.classList.add('hidden');
+    };
+
+    function renderStaffRosterList() {
+      const container = document.getElementById('staff-roster-list');
+      const countLabel = document.getElementById('roster-list-count');
+      if (countLabel) countLabel.textContent = staffList.length;
+      if (!container) return;
+      container.innerHTML = '';
+
+      if (staffList.length === 0) {
+        container.innerHTML = `<p class="text-xs text-slate-400 py-3 text-center">スタッフが登録されていません</p>`;
+        return;
+      }
+
+      staffList.forEach(staff => {
+        const item = document.createElement('div');
+        item.className = 'flex items-center justify-between p-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition shadow-sm';
+        item.innerHTML = `
+          <div class="flex items-center space-x-2.5">
+            <span class="w-7 h-7 rounded-lg text-white text-xs font-bold flex items-center justify-center shrink-0 shadow-sm" style="background-color: ${staff.color || '#4f46e5'}">
+              ${staff.name.charAt(0)}
+            </span>
+            <div>
+              <p class="text-xs font-bold text-slate-800">${staff.name}</p>
+            </div>
+          </div>
+          <div class="flex items-center space-x-1">
+            <button type="button" onclick="editStaffName('${staff.id}')" class="px-2.5 py-1 text-xs font-semibold text-indigo-600 hover:bg-indigo-50 rounded-md transition">
+              名前変更
+            </button>
+            <button type="button" onclick="deleteStaff('${staff.id}')" class="px-2.5 py-1 text-xs font-semibold text-rose-500 hover:bg-rose-50 rounded-md transition" title="スタッフを削除">
+              削除
+            </button>
+          </div>
+        `;
+        container.appendChild(item);
+      });
+    }
+
+    window.handleStaffRosterSubmit = function(e) {
+      e.preventDefault();
+      const editId = document.getElementById('roster-edit-id').value;
+      const name = document.getElementById('roster-input-name').value.trim();
+      if (!name) return;
+
+      const colors = ['#4f46e5', '#0284c7', '#0d9488', '#d97706', '#7c3aed', '#db2777', '#059669', '#ea580c'];
+
+      if (editId) {
+        const idx = staffList.findIndex(s => s.id === editId);
+        if (idx !== -1) {
+          staffList[idx].name = name;
+          showToast(`${name}に名前を更新しました`);
+        }
+      } else {
+        const newStaff = {
+          id: 'st_' + Date.now(),
+          name,
+          color: colors[staffList.length % colors.length],
+          shiftStart: '09:00',
+          shiftEnd: '17:30',
+          isOff: false
+        };
+        staffList.push(newStaff);
+        showToast(`${name}をスタッフ名簿に登録しました`);
+      }
+
+      saveData();
+      renderStaffRosterList();
+      updateStaffSelectFilterOptions();
+      renderTimelineRows();
+      cancelStaffRosterEdit();
+    };
+
+    window.openStaffRosterForEdit = function(staffId) {
+      openStaffRosterModal();
+      editStaffName(staffId);
+    };
+
+    window.editStaffName = function(staffId) {
+      const staff = staffList.find(s => s.id === staffId);
+      if (!staff) return;
+
+      document.getElementById('roster-edit-id').value = staff.id;
+      document.getElementById('roster-input-name').value = staff.name;
+      document.getElementById('roster-form-heading').textContent = `「${staff.name}」の名前を変更`;
+      document.getElementById('btn-submit-roster').textContent = '変更保存';
+      document.getElementById('roster-edit-cancel-wrap').classList.remove('hidden');
+      document.getElementById('roster-input-name').focus();
+    };
+
+    window.cancelStaffRosterEdit = function() {
+      const editId = document.getElementById('roster-edit-id');
+      const inputName = document.getElementById('roster-input-name');
+      const heading = document.getElementById('roster-form-heading');
+      const submitBtn = document.getElementById('btn-submit-roster');
+      const cancelWrap = document.getElementById('roster-edit-cancel-wrap');
+
+      if (editId) editId.value = '';
+      if (inputName) inputName.value = '';
+      if (heading) heading.textContent = '新しいスタッフを追加';
+      if (submitBtn) submitBtn.textContent = '登録';
+      if (cancelWrap) cancelWrap.classList.add('hidden');
+    };
+
+    // --- 2. シフト（勤務時間）設定専用 ---
+    window.openShiftEditModal = function(targetStaffId = null) {
+      if (staffList.length === 0) {
+        showToast('まず「スタッフ名簿」からスタッフを登録してください');
+        return;
+      }
+
+      const select = document.getElementById('shift-select-staff');
+      select.innerHTML = staffList.map(s => {
+        const statusText = s.isOff ? '休み' : `${s.shiftStart}〜${s.shiftEnd}`;
+        return `<option value="${s.id}">${s.name} (現在: ${statusText})</option>`;
+      }).join('');
+
+      const activeId = targetStaffId || (staffList.some(s => s.id === select.value) ? select.value : staffList[0].id);
+      select.value = activeId;
+      onShiftStaffSelectChange(activeId);
+
+      document.getElementById('shift-modal').classList.remove('hidden');
+    };
+
+    window.closeShiftEditModal = function() {
+      const modal = document.getElementById('shift-modal');
+      if (modal) modal.classList.add('hidden');
+    };
+
+    window.onShiftStaffSelectChange = function(staffId) {
+      const staff = staffList.find(s => s.id === staffId);
+      if (!staff) return;
+      
+      const isOffCheckbox = document.getElementById('shift-input-isoff');
+      isOffCheckbox.checked = !!staff.isOff;
+      toggleShiftInputs(!!staff.isOff);
+
+      if (!staff.isOff) {
+        document.getElementById('shift-input-start').value = staff.shiftStart;
+        document.getElementById('shift-input-end').value = staff.shiftEnd;
+      }
+    };
+
+    window.toggleShiftInputs = function(isOff) {
+      const container = document.getElementById('shift-time-inputs-container');
+      const startInput = document.getElementById('shift-input-start');
+      const endInput = document.getElementById('shift-input-end');
+      
+      startInput.disabled = isOff;
+      endInput.disabled = isOff;
+      
+      if (isOff) {
+        container.classList.add('opacity-30', 'pointer-events-none');
+        startInput.classList.add('bg-slate-100');
+        endInput.classList.add('bg-slate-100');
+        startInput.removeAttribute('required');
+        endInput.removeAttribute('required');
+      } else {
+        container.classList.remove('opacity-30', 'pointer-events-none');
+        startInput.classList.remove('bg-slate-100');
+        endInput.classList.remove('bg-slate-100');
+        startInput.setAttribute('required', 'required');
+        endInput.setAttribute('required', 'required');
+      }
+    };
+
+    window.applyShiftShortcut = function(start, end) {
+      if (start === 'off') {
+        document.getElementById('shift-input-isoff').checked = true;
+        toggleShiftInputs(true);
+        showToast('休みをセットしました');
+      } else {
+        document.getElementById('shift-input-isoff').checked = false;
+        toggleShiftInputs(false);
+        document.getElementById('shift-input-start').value = start;
+        document.getElementById('shift-input-end').value = end;
+        showToast(`ショートカット (${start}〜${end}) を反映しました`);
+      }
+    };
+
+    window.handleShiftFormSubmit = function(e) {
+      e.preventDefault();
+      const staffId = document.getElementById('shift-select-staff').value;
+      const isOff = document.getElementById('shift-input-isoff').checked;
+      const start = document.getElementById('shift-input-start').value || '09:00';
+      const end = document.getElementById('shift-input-end').value || '17:30';
+
+      const idx = staffList.findIndex(s => s.id === staffId);
+      if (idx !== -1) {
+        staffList[idx].isOff = isOff;
+        if (!isOff) {
+          staffList[idx].shiftStart = start;
+          staffList[idx].shiftEnd = end;
+        } else {
+          // 休みの場合は関連する休憩予定もクリアしておく
+          breakList = breakList.filter(b => b.staffId !== staffId);
+        }
+        
+        saveData();
+        renderTimelineRows();
+        closeShiftEditModal();
+        
+        if (isOff) {
+          showToast(`${staffList[idx].name}を「休み」に変更しました`);
+        } else {
+          showToast(`${staffList[idx].name}のシフトを ${start}〜${end} に変更しました`);
+        }
+      }
+    };
+
+    window.deleteStaff = function(staffId) {
+      const staff = staffList.find(s => s.id === staffId);
+      if (!staff) return;
+
+      openConfirmModal('スタッフの削除', `${staff.name} を名簿から削除しますか？\n登録されている休憩予定もすべて削除されます。`, () => {
+        staffList = staffList.filter(s => s.id !== staffId);
+        breakList = breakList.filter(b => b.staffId !== staffId);
+        saveData();
+        renderStaffRosterList();
+        updateStaffSelectFilterOptions();
+        renderTimelineRows();
+        cancelStaffRosterEdit();
+        showToast(`${staff.name}を削除しました`);
+      });
+    };
+
+    function updateCurrentTimeLine() {
+      const line = document.getElementById('current-time-line');
+      const label = document.getElementById('current-time-label');
+      if (!line || !label) return;
+
+      const now = new Date();
+      const h = now.getHours();
+      const m = now.getMinutes();
+
+      label.textContent = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+
+      if (h < START_HOUR || h >= END_HOUR) {
+        line.classList.add('hidden');
+        return;
+      }
+
+      line.classList.remove('hidden');
+      const totalMinutes = (h - START_HOUR) * 60 + m;
+      const pxPerMinute = (TOTAL_HOURS * currentHourWidth) / (TOTAL_HOURS * 60);
+      const offsetPx = 192 + (totalMinutes * pxPerMinute);
+
+      line.style.left = `${offsetPx}px`;
+    }
+
+    window.openConfirmModal = function(title, msg, onOk) {
+      const modal = document.getElementById('confirm-modal');
+      const titleEl = document.getElementById('confirm-modal-title');
+      const msgEl = document.getElementById('confirm-modal-msg');
+      if (!modal || !titleEl || !msgEl) return;
+
+      titleEl.textContent = title;
+      msgEl.innerText = msg;
+      confirmCallback = onOk;
+      modal.classList.remove('hidden');
+    };
+
+    window.closeConfirmModal = function(isConfirmed) {
+      const modal = document.getElementById('confirm-modal');
+      if (modal) modal.classList.add('hidden');
+      if (isConfirmed && confirmCallback) {
+        confirmCallback();
+      }
+      confirmCallback = null;
+    };
+
+    window.showToast = function(msg) {
+      const toast = document.getElementById('toast');
+      const toastMsg = document.getElementById('toast-message');
+      if (!toast || !toastMsg) return;
+
+      toastMsg.textContent = msg;
+      toast.classList.remove('translate-y-10', 'opacity-0', 'pointer-events-none');
+      setTimeout(() => {
+        toast.classList.add('translate-y-10', 'opacity-0', 'pointer-events-none');
+      }, 2600);
+    };
+
+    window.restoreDemoData = function() {
+      openConfirmModal('データ復元', '登録データをデモ初期サンプルに戻しますか？', () => {
+        staffList = JSON.parse(JSON.stringify(defaultStaff));
+        breakList = JSON.parse(JSON.stringify(defaultBreaks));
+        saveData();
+        updateStaffSelectFilterOptions();
+        renderTimelineRows();
+        showToast('サンプルデータを復元しました');
+      });
+    };
+
+    // Initialize on load safely
+    window.addEventListener('DOMContentLoaded', function() {
+      loadData();
+      updateStaffSelectFilterOptions();
+      renderTimelineHeader();
+      renderTimelineRows();
+
+      setInterval(updateCurrentTimeLine, 10000);
+      updateCurrentTimeLine();
+    });
+  </script>
+</body>
+</html>
